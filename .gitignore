@@ -1,0 +1,4 @@
+# Upload archive and unpacked build are produced by source/build_yandex.py
+build/
+tests/node_modules/
+__pycache__/
