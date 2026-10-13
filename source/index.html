@@ -46,6 +46,14 @@ button:focus-visible,.tube:focus-visible{outline:3px solid #fff;outline-offset:3
 .mini svg{width:11px;height:11px;fill:rgba(255,255,255,.2)}
 .mini svg.on{fill:var(--gold)}
 .spacer{flex:1}
+/* Only the level pill may shrink, so coins and restart always stay on screen */
+.pill{flex:none}
+.pill.lvl{flex:0 1 auto;min-width:0;overflow:hidden}
+@media (max-width:380px){
+  #app{padding-inline:10px}
+  .hud{gap:6px}
+  .pill,.pill.lvl{padding:0 10px;font-size:12px}
+}
 .iconbtn{position:relative;width:40px;height:40px;flex:none;border-radius:14px;border:1.5px solid rgba(255,255,255,.18);background:rgba(255,255,255,.1);display:grid;place-items:center;padding:0}
 .iconbtn svg{width:20px;height:20px}
 .iconbtn:active,.pill:active{transform:scale(.94)}
@@ -153,7 +161,7 @@ button:focus-visible,.tube:focus-visible{outline:3px solid #fff;outline-offset:3
 .badge svg{width:12px;height:12px}
 
 /* Overlays */
-.ov{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:16px;background:rgba(14,9,40,.66);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px)}
+.ov{position:fixed;inset:0;z-index:20;display:grid;place-items:center;place-items:safe center;overflow-y:auto;padding:16px;background:rgba(14,9,40,.66);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px)}
 .card{width:min(370px,100%);max-height:calc(100% - 8px);overflow:auto;box-sizing:border-box;text-align:center;padding:26px 20px 20px;border-radius:30px;
   background:linear-gradient(180deg,var(--panel-hi),var(--panel));border:2px solid rgba(255,255,255,.14);box-shadow:0 24px 60px rgba(0,0,0,.45);animation:pop .4s cubic-bezier(.3,1.6,.5,1);display:flex;flex-direction:column;gap:14px;align-items:stretch}
 @keyframes pop{from{transform:scale(.7);opacity:0}to{transform:none;opacity:1}}
@@ -256,6 +264,14 @@ button:focus-visible,.tube:focus-visible{outline:3px solid #fff;outline-offset:3
 @keyframes breathe{50%{transform:scale(1.05)}}
 .chip{align-self:center;display:flex;gap:7px;align-items:center;padding:7px 14px;border-radius:999px;background:linear-gradient(90deg,#ff8c2b,#c2416b);font-weight:900;font-size:13px}
 .foot{font-size:12px;color:var(--muted);opacity:.75}
+/* Landscape phones: compact title so the Play button stays on screen */
+@media (max-height:500px){
+  #title .card{gap:8px}
+  .mascots{--bs:38px;height:52px}
+  .logo{font-size:clamp(32px,11vh,56px)}
+  .subtitle{font-size:15px}
+  .btn.big{font-size:18px;padding:12px}
+}
 
 /* Mock ad */
 #adov{z-index:40;background:#0a0720}
@@ -337,6 +353,7 @@ const I = {
 };
 const plural = (n, a, b, c) => { const m10 = n%10, m100 = n%100; return m10 === 1 && m100 !== 11 ? a : m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20) ? b : c; };
 const pad = n => String(n).padStart(2, '0');
+const esc = v => String(v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
 const dayDiff = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 864e5);
 const seasonOn = () => { const d = new Date(), m = d.getMonth()+1; return m === 10 || (m === 11 && d.getDate() <= 7); };
@@ -371,17 +388,25 @@ const TASK_POOL = [
 /* ---------- save: local + Yandex cloud ---------- */
 const DEFAULT = { v: 2, level: 1, max: 1, coins: 0, sound: true, stars: {}, skin: 'faces', bg: 'night', owned: ['faces','night'], adProg: {}, daily: { last: '', streak: 0 }, tasks: null, seen: {}, ts: 0 };
 let S = JSON.parse(JSON.stringify(DEFAULT));
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const toInt = (v, min) => { const n = Math.floor(Number(v)); return Number.isFinite(n) ? Math.max(min, n) : min; };
+const LOOK_IDS = [...SKINS, ...BGS].map(x => x.id);
+const validTasks = t => isObj(t) && typeof t.date === 'string' && Array.isArray(t.list) && t.list.every(x => isObj(x) && TASK_POOL[x.i]);
+// Saves come from localStorage and the cloud and may be old or broken: keep known ids and sane types only
 function mergeState(src){
-  if (!src || typeof src !== 'object') return;
-  const d = JSON.parse(JSON.stringify(DEFAULT));
-  Object.assign(d, src);
-  if (!Array.isArray(d.owned)) d.owned = [];
+  if (!isObj(src)) return;
+  const d = Object.assign(JSON.parse(JSON.stringify(DEFAULT)), src);
+  d.owned = (Array.isArray(d.owned) ? d.owned : []).filter(x => LOOK_IDS.includes(x));
   ['faces','night'].forEach(x => { if (!d.owned.includes(x)) d.owned.push(x); });
-  d.daily = Object.assign({ last: '', streak: 0 }, d.daily || {});
-  d.stars = d.stars || {}; d.adProg = d.adProg || {}; d.seen = d.seen || {};
-  d.level = Math.max(1, d.level|0); d.max = Math.max(d.max|0, d.level);
-  if (!d.owned.includes(d.skin)) d.skin = 'faces';
-  if (!d.owned.includes(d.bg)) d.bg = 'night';
+  if (!SKINS.some(x => x.id === d.skin) || !d.owned.includes(d.skin)) d.skin = 'faces';
+  if (!BGS.some(x => x.id === d.bg) || !d.owned.includes(d.bg)) d.bg = 'night';
+  ['stars','adProg','seen'].forEach(k => { if (!isObj(d[k])) d[k] = {}; });
+  const daily = isObj(d.daily) ? d.daily : {};
+  d.daily = { last: typeof daily.last === 'string' ? daily.last : '', streak: toInt(daily.streak, 0) };
+  if (!validTasks(d.tasks)) d.tasks = null;
+  d.coins = toInt(d.coins, 0);
+  d.level = toInt(d.level, 1); d.max = Math.max(toInt(d.max, 1), d.level);
+  d.sound = d.sound !== false;
   S = d;
 }
 const better = (a, b) => { if (!b) return true; if (!a) return false; if ((a.max||1) !== (b.max||1)) return (a.max||1) > (b.max||1); return (a.ts||0) > (b.ts||0); };
@@ -397,13 +422,15 @@ const store = {
 };
 const Cloud = {
   player: null,
+  // Returns true when progress from the account replaced the local one
   async init(){
-    const y = Ads.ysdk; if (!y) return;
+    const y = Ads.ysdk; if (!y) return false;
     try {
       this.player = await y.getPlayer({ scopes: false });
       const d = await this.player.getData();
-      if (d && Object.keys(d).length && better(d, S)) mergeState(d);
+      if (d && Object.keys(d).length && better(d, S)){ mergeState(d); return true; }
     } catch(e){}
+    return false;
   },
   authorized(){
     try { if (!this.player) return false; return typeof this.player.isAuthorized === 'function' ? this.player.isAuthorized() : this.player.getMode() !== 'lite'; } catch(e){ return false; }
@@ -411,7 +438,12 @@ const Cloud = {
   save(flush){ try { const r = this.player?.setData(JSON.parse(JSON.stringify(S)), !!flush); r?.catch?.(() => {}); } catch(e){} },
   async login(){
     const y = Ads.ysdk; if (!y) return false;
-    try { await y.auth.openAuthDialog(); await this.init(); store.save(true); applyLooks(); updateHud(); return true; } catch(e){ return false; }
+    try { await y.auth.openAuthDialog(); } catch(e){ return false; }
+    const merged = await this.init();
+    store.save(true); applyLooks();
+    if (merged) buildLevel(genLevel(S.level)); // the board must match the level loaded from the account
+    updateHud(); Rating.set(S.max - 1);
+    return true;
   }
 };
 const Rating = {
@@ -427,14 +459,17 @@ const Rating = {
 };
 
 /* ---------- sound (WebAudio, no files) ---------- */
+// Silent while an ad plays (ducked), while the platform pauses the game (paused) or the tab is hidden
 const Sound = {
-  ctx: null, ducked: false,
+  ctx: null, ducked: false, paused: false,
+  quiet(){ return this.ducked || this.paused || document.hidden; },
+  sync(){ if (this.ctx) this.quiet() ? this.ctx.suspend() : this.ctx.resume(); },
   init(){
     if (!this.ctx) { try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} }
-    if (this.ctx && this.ctx.state === 'suspended' && !this.ducked && !document.hidden) this.ctx.resume();
+    if (this.ctx && this.ctx.state === 'suspended' && !this.quiet()) this.ctx.resume();
   },
   tone(f, dur, type='sine', vol=.2, slide=1, delay=0){
-    if (!S.sound || this.ducked || !this.ctx) return;
+    if (!S.sound || this.quiet() || !this.ctx) return;
     const t = this.ctx.currentTime + delay, o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.type = type; o.frequency.setValueAtTime(f, t);
     if (slide !== 1) o.frequency.exponentialRampToValueAtTime(f*slide, t+dur);
@@ -450,24 +485,32 @@ const Sound = {
   reveal(){ this.tone(620,.14,'sine',.16,1.6); },
   crack(){ this.tone(1400,.08,'square',.05,.5); this.tone(900,.14,'triangle',.1,.6,.05); this.tone(520,.4,'sine',.14,1.8,.12); },
   star(i){ this.tone(700+i*220,.22,'triangle',.16); },
-  duck(v){ this.ducked = v; if (!this.ctx) return; v ? this.ctx.suspend() : (!document.hidden && this.ctx.resume()); }
+  duck(v){ this.ducked = v; this.sync(); },
+  pause(v){ this.paused = v; this.sync(); }
 };
-document.addEventListener('visibilitychange', () => {
-  if (!Sound.ctx) return;
-  if (document.hidden) Sound.ctx.suspend(); else if (!Sound.ducked) Sound.ctx.resume();
-});
+document.addEventListener('visibilitychange', () => Sound.sync());
 
 /* ---------- ads: Yandex Games SDK when present, demo stubs otherwise ---------- */
-const inGame = () => G && !G.won && $('#title').hidden && $('#modal').hidden && $('#adov').hidden;
+// SDK ads are drawn outside the page, so Ads.showing tracks them for inGame()
+const inGame = () => G && !G.won && !Ads.showing && $('#title').hidden && $('#modal').hidden && $('#adov').hidden;
 const Ads = {
-  ysdk: null, lastFs: -1e9,
-  async init(){ try { if (window.YaGames) this.ysdk = await window.YaGames.init(); } catch(e){} },
+  ysdk: null, lastFs: -1e9, showing: false,
+  async init(){
+    try { if (window.YaGames) this.ysdk = await window.YaGames.init(); } catch(e){}
+    // The platform pauses the game for its own windows: mute and report the pause until it resumes
+    try {
+      this.ysdk?.on?.('game_api_pause', () => { Sound.pause(true); this.gameplay(false); });
+      this.ysdk?.on?.('game_api_resume', () => { Sound.pause(false); if (inGame()) this.gameplay(true); });
+    } catch(e){}
+  },
   gameplay(on){ try { const g = this.ysdk?.features?.GameplayAPI; on ? g?.start() : g?.stop(); } catch(e){} },
-  _begin(){ Sound.duck(true); this.gameplay(false); },
-  _end(){ Sound.duck(false); if (inGame()) this.gameplay(true); },
+  _begin(){ this.showing = true; Sound.duck(true); this.gameplay(false); },
+  _end(){ this.showing = false; Sound.duck(false); if (inGame()) this.gameplay(true); },
   // Between levels. With the real SDK the platform decides how often it actually shows.
+  // The SDK calls onClose after onError too, so each ad finishes only once.
   fullscreen(done){
-    const fin = () => { this._end(); done && done(); };
+    let closed = false;
+    const fin = () => { if (closed) return; closed = true; this._end(); done && done(); };
     this._begin();
     if (this.ysdk) { this.ysdk.adv.showFullscreenAdv({ callbacks: { onClose: fin, onError: fin } }); return; }
     if (performance.now() - this.lastFs < 60000) { fin(); return; } // imitate platform throttling
@@ -476,11 +519,12 @@ const Ads = {
   },
   // Player chooses to watch. Reward only after a completed view.
   rewarded(onReward, onSkip){
-    let got = false;
+    let got = false, closed = false;
     this._begin();
-    const fin = () => { this._end(); if (got) onReward(); else onSkip && onSkip(); };
+    const fin = () => { if (closed) return; closed = true; this._end(); if (got) onReward(); else onSkip && onSkip(); };
     if (this.ysdk) {
-      this.ysdk.adv.showRewardedVideo({ callbacks: { onRewarded: () => { got = true; }, onClose: fin, onError: () => { got = false; fin(); toast('Реклама не загрузилась, попробуй позже'); } } });
+      const failed = () => { if (closed) return; got = false; fin(); toast('Реклама не загрузилась, попробуй позже'); };
+      this.ysdk.adv.showRewardedVideo({ callbacks: { onRewarded: () => { got = true; }, onClose: fin, onError: failed } });
       return;
     }
     mockAd('За просмотр — награда', () => { got = true; fin(); });
@@ -896,10 +940,15 @@ async function showHint(){
 }
 function addExtraTube(){
   G.extraUsed = true; addTubeEl(); G.tubes.push([]); layout(true); Sound.chime(); updateHud();
-  const k = G.tubes.length-1; setTimeout(() => { const [x,y] = boardXY(T[k].x+T[k].w/2, T[k].y); FX.burst(x,y,20,['#ffffff','#ffcc33'],.6); }, D(300));
+  const g = G, k = G.tubes.length-1;
+  setTimeout(() => {
+    if (G !== g || !T[k]) return; // level restarted meanwhile
+    const [x,y] = boardXY(T[k].x+T[k].w/2, T[k].y); FX.burst(x,y,20,['#ffffff','#ffcc33'],.6);
+  }, D(300));
 }
 async function undo(){
   if (!G.history.length){ nudge('#undoBtn'); toast('Пока нечего отменять'); return; }
+  G.busy = true; // ignore taps while the lifted ball drops back, or two moves would run at once
   if (G.sel >= 0){ unlift(); await wait(D(200)); }
   const h = G.history.pop(); G.undos--; G.usedUndo = true; G.moves = Math.max(0, G.moves-1); updateHud();
   doMove(h.to, h.from, h.cnt);
@@ -985,7 +1034,12 @@ function winPanel(stars, first){
     <button class="btn ad" id="wAd">${I.play}Забрать ×3 (+${base*3})</button>
     <button class="btn" id="wNext">Дальше</button>`);
   for (let i=0;i<stars;i++) setTimeout(() => Sound.star(i), D(120 + i*180));
-  const finish = mult => { S.coins += base*mult; S.level++; store.save(true); Sound.coin(); updateHud(); nextLevel(); };
+  // A brand-new player gets the daily bonus after the first win instead of before the first level
+  const firstEver = first && S.max === 2;
+  const finish = mult => {
+    S.coins += base*mult; S.level++; store.save(true); Sound.coin(); updateHud();
+    if (firstEver && dailyAvailable()) showDaily(nextLevel); else nextLevel();
+  };
   m.querySelector('#wAd').onclick = () => { closeModal(); Ads.rewarded(() => finish(3), () => winPanel(stars, first)); };
   m.querySelector('#wNext').onclick = () => { closeModal(); finish(1); };
 }
@@ -1125,7 +1179,8 @@ async function rating(){
   const m = openModal(`<h2>Рейтинг</h2><p>Кто прошёл больше уровней</p><div class="lb" id="lbList"><p>Загружаем…</p></div><button class="btn" id="rOk">Готово</button>`);
   m.onclick = e => { if (e.target.closest('#rOk')) closeModal(); if (e.target.closest('#rLogin')) Cloud.login().then(ok => ok && rating()); };
   const me = S.max - 1, list = m.querySelector('#lbList');
-  const row = (rk, nm, sc, mine) => `<div class="lbrow ${mine ? 'me' : ''} ${rk <= 3 ? 'top' : ''}"><span class="rk">${rk}</span><span class="nm">${nm}</span><span class="sc">${sc}</span></div>`;
+  // Names and scores come from other players via the leaderboard: always escape them
+  const row = (rk, nm, sc, mine) => `<div class="lbrow ${mine ? 'me' : ''} ${rk <= 3 ? 'top' : ''}"><span class="rk">${esc(rk)}</span><span class="nm">${esc(nm)}</span><span class="sc">${esc(sc)}</span></div>`;
   if (!Ads.ysdk){
     const sample = [['Аня', 184], ['Кирилл', 152], ['Бабушка Зина', 131], ['Тимур', 97], ['Котлетка', 64], ['Лиза', 41], ['Миша', 23], ['Ваня', 9]];
     sample.push(['Ты', me]); sample.sort((a,b) => b[1]-a[1]);
@@ -1207,7 +1262,7 @@ function buildTitle(){
 $('#playBtn').onclick = () => {
   Sound.init(); Sound.pop(); $('#title').hidden = true;
   const go = () => { if (inGame()) Ads.gameplay(true); maybeIntro(); tutorial(); };
-  if (dailyAvailable()) showDaily(go); else go();
+  if (dailyAvailable() && S.max > 1) showDaily(go); else go();
 };
 
 /* ---------- boot ---------- */
@@ -1227,7 +1282,7 @@ async function start(data){
   else { buildLevel(genLevel(S.level)); buildTitle(); }
   updateHud();
   try { Ads.ysdk?.features?.LoadingAPI?.ready(); } catch(e){}
-  window.__kolb = { get G(){ return G; }, get S(){ return S; }, solve, astar, tapTube, allColors, genLevel, computePar };
+  window.__kolb = { get G(){ return G; }, get S(){ return S; }, Sound, solve, astar, tapTube, allColors, genLevel, computePar };
 }
 window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
 })();

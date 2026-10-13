@@ -46,7 +46,8 @@ doc = f"""<!doctype html>
 </body>
 </html>
 """
-(OUT / 'index.html').write_text(doc, encoding='utf-8')
+# LF on every OS, so rebuilding on Windows gives the same bytes
+(OUT / 'index.html').write_text(doc, encoding='utf-8', newline='\n')
 
 ZIP.unlink(missing_ok=True)
 with zipfile.ZipFile(ZIP, 'w', zipfile.ZIP_DEFLATED) as z:
