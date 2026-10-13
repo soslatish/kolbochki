@@ -1,0 +1,14 @@
+{
+  "name": "kolbochki-tests",
+  "private": true,
+  "description": "Checks for the built game: level generator, end-to-end play in Chrome, regression tests for fixed bugs",
+  "scripts": {
+    "test": "node levels.test.js && node e2e.test.js && node regress.test.js",
+    "levels": "node levels.test.js",
+    "e2e": "node e2e.test.js",
+    "regress": "node regress.test.js"
+  },
+  "devDependencies": {
+    "playwright-core": "1.48.2"
+  }
+}
